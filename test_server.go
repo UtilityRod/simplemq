@@ -6,6 +6,21 @@ import (
 )
 
 func main() {
-	fmt.Println("Hello")
-	core.RunServer()
+	server, err := core.NewSMQServer("127.0.0.1", "44567")
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for {
+		conn, err := server.Ln.Accept()
+
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+
+		go server.ConnectionHandler(conn)
+	}
 }
