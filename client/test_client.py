@@ -2,6 +2,7 @@
 
 import struct
 import socket
+import time
 
 HOST = "127.0.0.1"
 PORT = 44567
@@ -27,6 +28,10 @@ def main():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
         s.sendall(fixed + buffer)
+        time.sleep(2)
+        fixed = struct.pack("!BI", 2, 0)
+        s.sendall(fixed)
+        time.sleep(5)
 
 if __name__ == "__main__":
     main()

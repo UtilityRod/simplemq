@@ -13,6 +13,8 @@ func main() {
 		return
 	}
 
+	server.RegisterMandatoryTopic("test")
+
 	for {
 		conn, err := server.Ln.Accept()
 

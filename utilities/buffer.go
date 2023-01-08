@@ -11,7 +11,7 @@ type Buffer struct {
 	Bytes []byte
 }
 
-func NewBuffer(size uint) *Buffer {
+func NewBuffer(size uint32) *Buffer {
 	var buffer Buffer
 	buffer.Bytes = make([]byte, size)
 	return &buffer
