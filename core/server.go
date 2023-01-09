@@ -9,34 +9,32 @@ import (
 )
 
 const (
-	connect    = 1
-	publish    = 2
-	subscribe  = 3
-	disconnect = 4
+	ConnectType    = 1
+	PublishType    = 2
+	SubscribeType  = 3
+	DisconnectType = 4
+	ConnectAck     = 5
+	PublishAck     = 6
+	SubscribeAck   = 7
+	DiscconectAck  = 8
 )
-
-type Topic struct {
-	In      chan<- Message
-	Clients []*SMQClient
-}
-
-type Message struct {
-	Topic   string
-	Message string
-}
 
 type SMQClient struct {
 	Conn       net.Conn
 	ClientName string
-	Message    chan Message
+	Publish    chan packets.Publish
 	Quit       chan bool
 }
 
+type Topic struct {
+	Clients []*SMQClient
+}
+
 type SMQServer struct {
-	Addr            string
-	Port            string
-	Ln              net.Listener
-	MandatoryTopics map[string]Topic
+	Addr    string
+	Port    string
+	Ln      net.Listener
+	Handler *EventHandler
 }
 
 func NewSMQServer(addr, port string) (*SMQServer, error) {
@@ -53,7 +51,8 @@ func NewSMQServer(addr, port string) (*SMQServer, error) {
 		Ln:   ln,
 	}
 
-	server.MandatoryTopics = make(map[string]Topic)
+	server.Handler = NewEventHandler()
+	server.Handler.Start()
 
 	return &server, nil
 }
@@ -62,7 +61,7 @@ func NewSMQClient(name string, conn net.Conn) *SMQClient {
 	client := SMQClient{
 		Conn:       conn,
 		ClientName: name,
-		Message:    make(chan Message),
+		Publish:    make(chan packets.Publish),
 		Quit:       make(chan bool),
 	}
 
@@ -72,6 +71,7 @@ func NewSMQClient(name string, conn net.Conn) *SMQClient {
 func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 	defer conn.Close()
 	fmt.Printf("Accepted connection for %s\n", conn.RemoteAddr())
+	var err error
 	fixedHeader, err := packets.ReadFixedHeader(conn)
 
 	if err != nil {
@@ -88,15 +88,15 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 	// Create new client
 	client := NewSMQClient(connect.ClientName, conn)
 	// Register client to all mandatory topics
-	for k := range server.MandatoryTopics {
-		topic := server.MandatoryTopics[k]
+	for k := range (*server.Handler).Topics {
+		topic := server.Handler.Topics[k]
 		topic.Clients = append(topic.Clients, client)
+		server.Handler.Topics[k] = topic
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go client.ClientMessageHandler(&wg)
 	quit := false
+	var event Event
 
 	for quit != true {
 		fixedHeader, err := packets.ReadFixedHeader(client.Conn)
@@ -106,13 +106,17 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 			client.Quit <- quit
 		} else {
 			switch fixedHeader.PacketType {
-			case publish:
-				fmt.Println("Publish")
+			case PublishType:
+				var publish *packets.Publish
+				publish, err = packets.GetPublish(conn, fixedHeader.RemainingLen)
+				event.EventType = PublishType
+				event.Payload = publish
+				server.Handler.EventChannel <- event
 				break
-			case subscribe:
+			case SubscribeType:
 				fmt.Println("Subscribe")
 				break
-			case disconnect:
+			case DisconnectType:
 				quit = true
 				client.Quit <- quit
 			default:
@@ -127,30 +131,17 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 	fmt.Printf("Closed connection for %s\n", conn.RemoteAddr())
 }
 
-func (client *SMQClient) ClientMessageHandler(wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	for {
-		select {
-		case msg := <-client.Message:
-			fmt.Println("Message recieved: ", msg.Topic, " / ", msg.Message)
-		case <-client.Quit:
-			return
-		}
-	}
-}
-
-func (server *SMQServer) RegisterMandatoryTopic(name string) error {
-	if _, ok := server.MandatoryTopics[name]; ok {
+func (server *SMQServer) RegisterTopic(name string) error {
+	if _, ok := (*server).Handler.Topics[name]; ok {
 		errStr := fmt.Sprintf("could not register topic '%s': already exists", name)
 		return errors.New(errStr)
 	}
 
 	topic := Topic{
-		In: make(chan<- Message),
+		Clients: make([]*SMQClient, 0),
 	}
 
-	server.MandatoryTopics[name] = topic
+	server.Handler.Topics[name] = &topic
 	fmt.Printf("New mandatory topic '%s' registered.\n", name)
 	return nil
 }

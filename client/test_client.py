@@ -14,7 +14,7 @@ def main():
     username = b"user"
     password = b"pass"
 
-    buffer = struct.pack(
+    connect_buffer = struct.pack(
         f"!H{len(proto_name)}sBH{len(client_name)}sH{len(username)}sH{len(password)}s",
         len(proto_name), proto_name,
         proto_version,
@@ -23,14 +23,35 @@ def main():
         len(password), password
         )
 
-    fixed = struct.pack("!BI", 1, len(buffer))
+    connect_fixed = struct.pack("!BI", 1, len(connect_buffer))
+
+    topic = b"test"
+    value = b"value"
+    publish_buffer = struct.pack(
+        f"!H{len(topic)}sH{len(value)}s",
+        len(topic), topic,
+        len(value), value
+    )
+
+    publish_fixed = struct.pack("!BI", 2, len(publish_buffer))
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
-        s.sendall(fixed + buffer)
-        time.sleep(2)
-        fixed = struct.pack("!BI", 2, 0)
-        s.sendall(fixed)
+        s.sendall(connect_fixed + connect_buffer)
+        s.sendall(publish_fixed + publish_buffer)
+        buffer = s.recv(5)
+        packet, remaining = struct.unpack("!BI", buffer)
+        buffer = s.recv(remaining)
+
+        nread = 0
+        size = struct.unpack("!H", buffer[:2])[0]
+        nread += 2
+        topic = struct.unpack(f"!{size}s", buffer[nread:size + 2])[0]
+        nread += size
+        size = struct.unpack("!H", buffer[nread:nread + 2])[0]
+        nread += 2
+        value = struct.unpack(f"!{size}s", buffer[nread:])[0]
+        print(packet, topic, value)
         time.sleep(5)
 
 if __name__ == "__main__":
