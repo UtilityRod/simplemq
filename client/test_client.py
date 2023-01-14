@@ -35,9 +35,17 @@ def main():
 
     publish_fixed = struct.pack("!BI", 2, len(publish_buffer))
 
+    subscribe_buffer = struct.pack(
+        f"!H{len(topic)}s",
+        len(topic), topic
+    )
+
+    subscribe_fixed = struct.pack("!BI", 3, len(subscribe_buffer))
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
         s.sendall(connect_fixed + connect_buffer)
+        s.sendall(subscribe_fixed + subscribe_buffer)
         s.sendall(publish_fixed + publish_buffer)
         buffer = s.recv(5)
         packet, remaining = struct.unpack("!BI", buffer)
@@ -52,7 +60,6 @@ def main():
         nread += 2
         value = struct.unpack(f"!{size}s", buffer[nread:])[0]
         print(packet, topic, value)
-        time.sleep(5)
 
 if __name__ == "__main__":
     main()

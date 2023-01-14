@@ -68,15 +68,17 @@ func (handler *EventHandler) HandleEvents() {
 
 		switch event.EventType {
 		case PublishType:
-			message := event.Payload.(*packets.Publish)
-			topic := handler.Topics[message.Topic]
+			publish := event.Payload.(*packets.Publish)
+			topic := handler.Topics[publish.Topic]
 			for _, client := range topic.Clients {
-				err := message.Send(client.Conn)
+				err := publish.Send(client.Conn)
 
 				if err != nil {
 					fmt.Println(err)
 				}
 			}
+		case SubscribeType:
+			fmt.Println("Subscribe")
 		case Quit:
 			fmt.Println("Shutting down event handler")
 		default:

@@ -22,12 +22,12 @@ const (
 type SMQClient struct {
 	Conn       net.Conn
 	ClientName string
-	Publish    chan packets.Publish
 	Quit       chan bool
 }
 
 type Topic struct {
-	Clients []*SMQClient
+	TopicMutex sync.Mutex
+	Clients    []*SMQClient
 }
 
 type SMQServer struct {
@@ -61,7 +61,6 @@ func NewSMQClient(name string, conn net.Conn) *SMQClient {
 	client := SMQClient{
 		Conn:       conn,
 		ClientName: name,
-		Publish:    make(chan packets.Publish),
 		Quit:       make(chan bool),
 	}
 
@@ -87,12 +86,6 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 	}
 	// Create new client
 	client := NewSMQClient(connect.ClientName, conn)
-	// Register client to all mandatory topics
-	for k := range (*server.Handler).Topics {
-		topic := server.Handler.Topics[k]
-		topic.Clients = append(topic.Clients, client)
-		server.Handler.Topics[k] = topic
-	}
 
 	var wg sync.WaitGroup
 	quit := false
@@ -114,7 +107,11 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 				server.Handler.EventChannel <- event
 				break
 			case SubscribeType:
-				fmt.Println("Subscribe")
+				var subscribe *packets.Subscribe
+				subscribe, err = packets.GetSubscribe(conn, fixedHeader.RemainingLen)
+				topic := (*server.Handler).Topics[subscribe.Topic]
+				topic.Clients = append(topic.Clients, client)
+				fmt.Printf("Client '%s' subscribed to topic '%s'\n", client.ClientName, (*subscribe).Topic)
 				break
 			case DisconnectType:
 				quit = true
