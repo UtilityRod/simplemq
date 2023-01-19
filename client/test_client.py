@@ -42,6 +42,8 @@ def main():
 
     subscribe_fixed = struct.pack("!BI", 3, len(subscribe_buffer))
 
+    disconnectFixed = struct.pack("!BI", 4, 0)
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
         s.sendall(connect_fixed + connect_buffer)
@@ -59,7 +61,8 @@ def main():
         size = struct.unpack("!H", buffer[nread:nread + 2])[0]
         nread += 2
         value = struct.unpack(f"!{size}s", buffer[nread:])[0]
-        print(packet, topic, value)
+        s.sendall(disconnectFixed)
+        print(f"Topic: {topic} Value: {value}")
 
 if __name__ == "__main__":
     main()

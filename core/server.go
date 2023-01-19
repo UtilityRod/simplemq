@@ -1,11 +1,9 @@
 package core
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"smq/packets"
-	"sync"
 )
 
 const (
@@ -22,12 +20,7 @@ const (
 type SMQClient struct {
 	Conn       net.Conn
 	ClientName string
-	Quit       chan bool
-}
-
-type Topic struct {
-	TopicMutex sync.Mutex
-	Clients    []*SMQClient
+	SubTopics  []string
 }
 
 type SMQServer struct {
@@ -35,6 +28,12 @@ type SMQServer struct {
 	Port    string
 	Ln      net.Listener
 	Handler *EventHandler
+	Topics  map[string]*Topic
+}
+
+type SubscribePayload struct {
+	Payload *packets.Subscribe
+	Client  *SMQClient
 }
 
 func NewSMQServer(addr, port string) (*SMQServer, error) {
@@ -46,9 +45,10 @@ func NewSMQServer(addr, port string) (*SMQServer, error) {
 	}
 
 	server := SMQServer{
-		Addr: addr,
-		Port: port,
-		Ln:   ln,
+		Addr:   addr,
+		Port:   port,
+		Ln:     ln,
+		Topics: make(map[string]*Topic),
 	}
 
 	server.Handler = NewEventHandler()
@@ -61,7 +61,6 @@ func NewSMQClient(name string, conn net.Conn) *SMQClient {
 	client := SMQClient{
 		Conn:       conn,
 		ClientName: name,
-		Quit:       make(chan bool),
 	}
 
 	return &client
@@ -87,7 +86,6 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 	// Create new client
 	client := NewSMQClient(connect.ClientName, conn)
 
-	var wg sync.WaitGroup
 	quit := false
 	var event Event
 
@@ -96,51 +94,84 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 
 		if err != nil {
 			quit = true
-			client.Quit <- quit
 		} else {
 			switch fixedHeader.PacketType {
 			case PublishType:
-				var publish *packets.Publish
-				publish, err = packets.GetPublish(conn, fixedHeader.RemainingLen)
-				event.EventType = PublishType
-				event.Payload = publish
-				server.Handler.EventChannel <- event
+				event.Payload, err = packets.GetPublish(conn, fixedHeader.RemainingLen)
+				event.Func = server.publishHandler
 				break
 			case SubscribeType:
 				var subscribe *packets.Subscribe
 				subscribe, err = packets.GetSubscribe(conn, fixedHeader.RemainingLen)
-				topic := (*server.Handler).Topics[subscribe.Topic]
-				topic.Clients = append(topic.Clients, client)
-				fmt.Printf("Client '%s' subscribed to topic '%s'\n", client.ClientName, (*subscribe).Topic)
+				event.Payload = SubscribePayload{
+					Payload: subscribe,
+					Client:  client,
+				}
+				event.Func = server.subscribeHandler
 				break
 			case DisconnectType:
 				quit = true
-				client.Quit <- quit
+				event.Func = server.disconnectHandler
+				event.Payload = client
 			default:
-				fmt.Printf("invlaid packet type:'%d'\n", fixedHeader.PacketType)
 				quit = true
-				client.Quit <- quit
+				fmt.Printf("invlaid packet type:'%d'\n", fixedHeader.PacketType)
 			}
+
+			if err != nil {
+				fmt.Println(err)
+				break
+			}
+
+			server.Handler.EventChannel <- event
+			event.Func = nil
+			event.Payload = nil
 		}
 	}
 
-	wg.Wait()
 	fmt.Printf("Closed connection for %s\n", conn.RemoteAddr())
 }
 
-func (server *SMQServer) RegisterTopic(name string) error {
-	if _, ok := (*server).Handler.Topics[name]; ok {
-		errStr := fmt.Sprintf("could not register topic '%s': already exists", name)
-		return errors.New(errStr)
+func (server *SMQServer) publishHandler(pubInt interface{}) {
+	publish := pubInt.(*packets.Publish)
+	topic := server.Topics[publish.Topic]
+	for _, client := range topic.Clients {
+		err := publish.Send(client.Conn)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func (server *SMQServer) subscribeHandler(paylodInt interface{}) {
+	payload := paylodInt.(SubscribePayload)
+
+	// Get the topic being subscribed too
+	topicStr := payload.Payload.Topic
+	topic := server.Topics[topicStr]
+	// Check to see if client already subscribed to topic
+	clientName := payload.Client.ClientName
+	if _, ok := topic.Clients[clientName]; ok {
+		// Client already subscribed
+		return
 	}
 
-	topic := Topic{
-		Clients: make([]*SMQClient, 0),
-	}
+	// Update topic to contain client information
+	topic.Clients[clientName] = payload.Client
+	// Update client's subscribed topics
+	payload.Client.SubTopics = append(payload.Client.SubTopics, topicStr)
+}
 
-	server.Handler.Topics[name] = &topic
-	fmt.Printf("New mandatory topic '%s' registered.\n", name)
-	return nil
+func (server *SMQServer) disconnectHandler(payloadInt interface{}) {
+	client := payloadInt.(*SMQClient)
+
+	// For every topic the client is subscribed too
+	for _, topicStr := range client.SubTopics {
+		topic := server.Topics[topicStr]
+		// Delete the client from topic
+		delete(topic.Clients, client.ClientName)
+	}
 }
 
 // END OF SOURCE

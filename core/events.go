@@ -1,8 +1,6 @@
 package core
 
 import (
-	"fmt"
-	"smq/packets"
 	"sync"
 )
 
@@ -10,9 +8,11 @@ const (
 	Quit = 0xFF
 )
 
+type EventFunc func(payload interface{})
+
 type Event struct {
-	EventType int
-	Payload   interface{}
+	Payload interface{}
+	Func    EventFunc
 }
 
 type EventHandler struct {
@@ -21,13 +21,11 @@ type EventHandler struct {
 	Quit          bool
 	EventSignaler sync.Cond
 	Wg            sync.WaitGroup
-	Topics        map[string]*Topic
 }
 
 func NewEventHandler() *EventHandler {
 	handler := EventHandler{
 		EventChannel: make(chan Event),
-		Topics:       make(map[string]*Topic),
 	}
 
 	var mutex sync.Mutex
@@ -38,7 +36,6 @@ func NewEventHandler() *EventHandler {
 }
 
 func (handler *EventHandler) Start() {
-	fmt.Println("Starting event handler for SMQ server")
 	handler.Wg.Add(2)
 	go handler.EventReader()
 	go handler.HandleEvents()
@@ -47,7 +44,7 @@ func (handler *EventHandler) Start() {
 func (handler *EventHandler) Stop() {
 	handler.Quit = true
 	event := Event{
-		EventType: Quit,
+		Func: nil,
 	}
 	handler.EventChannel <- event
 	handler.Wg.Wait()
@@ -66,24 +63,10 @@ func (handler *EventHandler) HandleEvents() {
 
 		event, handler.Events = handler.Events[0], handler.Events[1:]
 
-		switch event.EventType {
-		case PublishType:
-			publish := event.Payload.(*packets.Publish)
-			topic := handler.Topics[publish.Topic]
-			for _, client := range topic.Clients {
-				err := publish.Send(client.Conn)
-
-				if err != nil {
-					fmt.Println(err)
-				}
-			}
-		case SubscribeType:
-			fmt.Println("Subscribe")
-		case Quit:
-			fmt.Println("Shutting down event handler")
-		default:
-			fmt.Printf("unknown event type: %d\n", event.EventType)
+		if event.Func != nil {
+			event.Func(event.Payload)
 		}
+
 	}
 }
 
