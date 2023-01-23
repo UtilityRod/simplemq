@@ -11,8 +11,8 @@ def main():
     proto_name = b"SMQ"
     proto_version = 1
     client_name = b"qwerty123"
-    username = b"user"
-    password = b"pass"
+    username = b"admin"
+    password = b"password"
 
     connect_buffer = struct.pack(
         f"!H{len(proto_name)}sBH{len(client_name)}sH{len(username)}sH{len(password)}s",

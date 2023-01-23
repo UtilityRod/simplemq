@@ -2,7 +2,6 @@ package packets
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"smq/utilities"
 )
@@ -60,14 +59,6 @@ func ReadConnect(conn net.Conn, size uint32) (*Connect, error) {
 	}
 
 	return &header, err
-}
-
-func (header Connect) Display() {
-	fmt.Printf("Protocol Name: %s\n", header.ProtoName)
-	fmt.Printf("Protocol Version: %d\n", header.ProtoVersion)
-	fmt.Printf("Client Name: %s\n", header.ClientName)
-	fmt.Printf("Username: %s\n", header.Username)
-	fmt.Printf("Password: %s\n", header.Password)
 }
 
 // END OF SOURCE

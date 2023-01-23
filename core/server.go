@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"smq/packets"
+	"smq/utilities"
 )
 
 const (
@@ -15,6 +16,8 @@ const (
 	PublishAck     = 6
 	SubscribeAck   = 7
 	DiscconectAck  = 8
+	DefaultUser    = "admin"
+	DefaultPass    = "password"
 )
 
 type SMQClient struct {
@@ -30,6 +33,7 @@ type SMQServer struct {
 	Handler *EventHandler
 	Topics  map[string]*Topic
 	Clients map[string]*SMQClient
+	Auth    *utilities.Authenticator
 }
 
 type SubscribePayload struct {
@@ -51,6 +55,7 @@ func NewSMQServer(addr, port string) (*SMQServer, error) {
 		Ln:      ln,
 		Topics:  make(map[string]*Topic),
 		Clients: make(map[string]*SMQClient),
+		Auth:    utilities.NewAuthenticator(DefaultUser, DefaultPass),
 	}
 
 	server.Handler = NewEventHandler()
@@ -85,6 +90,12 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 		fmt.Println(err)
 		return
 	}
+
+	if server.Auth.Authenticate(connect.Username, connect.Password) != true {
+		fmt.Printf("incorrect username or password from: %s\n", conn.RemoteAddr())
+		return
+	}
+
 	// Create new client
 	server.Clients[connect.ClientName] = NewSMQClient(connect.ClientName, conn)
 	client := server.Clients[connect.ClientName]
