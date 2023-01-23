@@ -29,6 +29,7 @@ type SMQServer struct {
 	Ln      net.Listener
 	Handler *EventHandler
 	Topics  map[string]*Topic
+	Clients map[string]*SMQClient
 }
 
 type SubscribePayload struct {
@@ -45,10 +46,11 @@ func NewSMQServer(addr, port string) (*SMQServer, error) {
 	}
 
 	server := SMQServer{
-		Addr:   addr,
-		Port:   port,
-		Ln:     ln,
-		Topics: make(map[string]*Topic),
+		Addr:    addr,
+		Port:    port,
+		Ln:      ln,
+		Topics:  make(map[string]*Topic),
+		Clients: make(map[string]*SMQClient),
 	}
 
 	server.Handler = NewEventHandler()
@@ -84,8 +86,8 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 		return
 	}
 	// Create new client
-	client := NewSMQClient(connect.ClientName, conn)
-
+	server.Clients[connect.ClientName] = NewSMQClient(connect.ClientName, conn)
+	client := server.Clients[connect.ClientName]
 	quit := false
 	var event Event
 
@@ -135,7 +137,8 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 func (server *SMQServer) publishHandler(pubInt interface{}) {
 	publish := pubInt.(*packets.Publish)
 	topic := server.Topics[publish.Topic]
-	for _, client := range topic.Clients {
+	for _, clientName := range topic.Clients {
+		client := server.Clients[clientName]
 		err := publish.Send(client.Conn)
 
 		if err != nil {
@@ -158,7 +161,7 @@ func (server *SMQServer) subscribeHandler(paylodInt interface{}) {
 	}
 
 	// Update topic to contain client information
-	topic.Clients[clientName] = payload.Client
+	topic.Clients[clientName] = payload.Client.ClientName
 	// Update client's subscribed topics
 	payload.Client.SubTopics = append(payload.Client.SubTopics, topicStr)
 }
