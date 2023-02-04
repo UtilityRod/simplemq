@@ -8,7 +8,7 @@ import (
 
 type Topic struct {
 	TopicMutex sync.Mutex
-	Clients    map[string]string
+	Clients    map[string]*SMQClient
 }
 
 func (server *SMQServer) RegisterTopic(name string) error {
@@ -18,7 +18,7 @@ func (server *SMQServer) RegisterTopic(name string) error {
 	}
 
 	topic := Topic{
-		Clients: make(map[string]string, 0),
+		Clients: make(map[string]*SMQClient, 0),
 	}
 
 	server.Topics[name] = &topic

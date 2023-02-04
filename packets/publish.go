@@ -11,36 +11,24 @@ type Publish struct {
 	Value string
 }
 
-func GetPublish(conn net.Conn, size uint32) (*Publish, error) {
-	buffer := utilities.NewBuffer(size)
-	nread, err := conn.Read(buffer.Bytes)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if nread != int(size) {
-		return nil, errors.New("invalid read size for publish packet")
-	}
+func (publish *Publish) Set(buffer *utilities.Buffer) error {
 
 	topic, err := buffer.UnpackString()
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	value, err := buffer.UnpackString()
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	Publish := Publish{
-		Topic: topic,
-		Value: value,
-	}
+	publish.Topic = topic
+	publish.Value = value
 
-	return &Publish, nil
+	return nil
 }
 
 func (publish *Publish) Send(conn net.Conn) error {

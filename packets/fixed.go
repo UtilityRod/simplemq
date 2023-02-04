@@ -6,6 +6,10 @@ import (
 	"smq/utilities"
 )
 
+type Packet interface {
+	Set(*utilities.Buffer) error
+}
+
 const (
 	FixedHeaderLen = 5
 )
