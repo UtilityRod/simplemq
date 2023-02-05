@@ -8,22 +8,19 @@ import (
 )
 
 const (
-	ConnectType    = 1
-	PublishType    = 2
-	SubscribeType  = 3
-	DisconnectType = 4
-	ConnectAck     = 5
-	PublishAck     = 6
-	SubscribeAck   = 7
-	DiscconectAck  = 8
-	DefaultUser    = "admin"
-	DefaultPass    = "password"
+	ConnectType     = 1
+	PublishType     = 2
+	SubscribeType   = 3
+	UnsubscribeType = 4
+	DisconnectType  = 5
+	DefaultUser     = "admin"
+	DefaultPass     = "password"
 )
 
 type SMQClient struct {
 	Conn       net.Conn
 	ClientName string
-	SubTopics  []string
+	Topics     map[string]*Topic
 	Quit       bool
 }
 
@@ -36,7 +33,7 @@ type SMQServer struct {
 	Clients  map[string]*SMQClient
 	Auth     *utilities.Authenticator
 	Payloads map[uint8]packets.Packet
-	Events   map[uint8]EventFunc
+	Handlers map[uint8]EventFunc
 }
 
 type SMQPayload struct {
@@ -61,16 +58,18 @@ func NewSMQServer(addr, port string) (*SMQServer, error) {
 		Auth:    utilities.NewAuthenticator(DefaultUser, DefaultPass),
 	}
 
-	server.Events = map[uint8]EventFunc{
-		PublishType:    server.publishHandler,
-		SubscribeType:  server.subscribeHandler,
-		DisconnectType: server.disconnectHandler,
+	server.Handlers = map[uint8]EventFunc{
+		PublishType:     server.publishHandler,
+		SubscribeType:   server.subscribeHandler,
+		UnsubscribeType: server.unsubscribeHandler,
+		DisconnectType:  server.disconnectHandler,
 	}
 
 	server.Payloads = map[uint8]packets.Packet{
-		PublishType:    &packets.Publish{},
-		SubscribeType:  &packets.Subscribe{},
-		DisconnectType: &packets.Disconnect{},
+		PublishType:     &packets.Publish{},
+		SubscribeType:   &packets.Subscribe{},
+		UnsubscribeType: &packets.Unsubscribe{},
+		DisconnectType:  &packets.Disconnect{},
 	}
 
 	server.Handler = NewEventHandler()
@@ -83,6 +82,7 @@ func NewSMQClient(name string, conn net.Conn) *SMQClient {
 	client := SMQClient{
 		Conn:       conn,
 		ClientName: name,
+		Topics:     make(map[string]*Topic),
 	}
 
 	return &client
@@ -121,7 +121,7 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 
 		if err != nil {
 			fmt.Println(err)
-			continue
+			break
 		}
 
 		buffer := utilities.NewBuffer(fixedHeader.RemainingLen)
@@ -137,7 +137,7 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 			continue
 		}
 		// Set function to handle payload
-		event.Func = server.Events[fixedHeader.PacketType]
+		event.Func = server.Handlers[fixedHeader.PacketType]
 		// Set the payload for the packet
 		payload := SMQPayload{
 			Payload: server.Payloads[fixedHeader.PacketType],
@@ -157,11 +157,13 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 		event.Payload = nil
 	}
 
+	delete(server.Clients, client.ClientName)
 	fmt.Printf("Closed connection for %s\n", conn.RemoteAddr())
 }
 
-func (server *SMQServer) publishHandler(pubInt interface{}) {
-	smqPayload := pubInt.(SMQPayload)
+func (server *SMQServer) publishHandler(inter interface{}) {
+	fmt.Println("Publish")
+	smqPayload := inter.(SMQPayload)
 	publish := smqPayload.Payload.(*packets.Publish)
 	topic := server.Topics[publish.Topic]
 	for _, client := range topic.Clients {
@@ -174,6 +176,7 @@ func (server *SMQServer) publishHandler(pubInt interface{}) {
 }
 
 func (server *SMQServer) subscribeHandler(inter interface{}) {
+	fmt.Println("Subscribe")
 	smqPayload := inter.(SMQPayload)
 	subscribe := smqPayload.Payload.(*packets.Subscribe)
 
@@ -191,18 +194,27 @@ func (server *SMQServer) subscribeHandler(inter interface{}) {
 	// Update topic to contain client information
 	topic.Clients[clientName] = client
 	// Update client's subscribed topics
-	client.SubTopics = append(client.SubTopics, topicStr)
+	client.Topics[topicStr] = topic
 }
 
-func (server *SMQServer) disconnectHandler(payloadInt interface{}) {
-	smqPayload := payloadInt.(SMQPayload)
+func (server *SMQServer) unsubscribeHandler(inter interface{}) {
+	fmt.Println("Unsubscribe")
+	payload := inter.(SMQPayload)
+	client := payload.Client
+	topicStr := payload.Payload.(*packets.Unsubscribe).Topic
+	delete(client.Topics, topicStr)
+	topic := server.Topics[topicStr]
+	delete(topic.Clients, client.ClientName)
+}
+
+func (server *SMQServer) disconnectHandler(inter interface{}) {
+	fmt.Println("Disconnect")
+	smqPayload := inter.(SMQPayload)
 	client := smqPayload.Client
 	client.Quit = true
 
 	// For every topic the client is subscribed too
-	for _, topicStr := range client.SubTopics {
-		topic := server.Topics[topicStr]
-		// Delete the client from topic
+	for _, topic := range client.Topics {
 		delete(topic.Clients, client.ClientName)
 	}
 }
