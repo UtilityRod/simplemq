@@ -162,7 +162,15 @@ func (server *SMQServer) ConnectionHandler(conn net.Conn) {
 		event.Payload = nil
 	}
 
-	delete(server.Clients, client.ClientName)
+	if _, ok := server.Clients[client.ClientName]; ok {
+		event.Func = server.disconnectHandler
+		event.Payload = SMQPayload{
+			Client: client,
+		}
+
+		server.Handler.EventChannel <- event
+	}
+
 	fmt.Printf("Closed connection for %s\n", conn.RemoteAddr())
 }
 

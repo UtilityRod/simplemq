@@ -61,6 +61,8 @@ func (server *SMQServer) disconnectHandler(inter interface{}) {
 	for _, topic := range client.Topics {
 		delete(topic.Clients, client.ClientName)
 	}
+
+	delete(server.Clients, client.ClientName)
 }
 
 // END OF SOURCE

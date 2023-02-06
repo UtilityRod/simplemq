@@ -4,12 +4,14 @@ import struct
 import socket
 import argparse
 import ipaddress
-import threading
+import os
+import signal
 import sys
 from smq.connect import Connect
 from smq.subscribe import Subscribe
 from smq.publish import Publish
 from smq.unsubscribe import Unsubscribe
+from socket_reader import SocketReader
 
 HOST = "127.0.0.1"
 PORT = 44567
@@ -50,19 +52,22 @@ def main():
             return
         else:
             print("Authentication successful")
+        read_handlers = {
+            2: publish_handler,
+            6: puback_handler
+        }
+        socket_reader = SocketReader(sock, read_handlers)
+        socket_reader.start()
+        input_handler(sock)
 
-        t1 = threading.Thread(target=remote_listener, args=(sock,))
-        t1.start()
-        local_handler(sock)
+    socket_reader.join()
 
-    sys.exit(0)
-
-def local_handler(sock):
+def input_handler(sock):
     handlers = {
         "pub": publish_request,
         "sub": subscribe_handler,
         "unsub": unsubscribe_handler,
-        "quit": disconnect_handler,
+        "quit": disconnect_handler, 
     }
     while True:
         choice = input("SMQ:> ").split(" ")
@@ -91,29 +96,8 @@ def unsubscribe_handler(sock, input):
 
 def disconnect_handler(sock):
     print("Disconnecting...")
+    os.kill(os.getpid(), signal.SIGUSR1)
     
-def remote_listener(sock):
-    handlers = {
-        2: publish_handler,
-        6: puback_handler
-    }
-    quit_flag = False
-    while quit_flag == False:
-        try:
-            buffer = sock.recv(5)
-            packet_type, size = struct.unpack("!BI", buffer)
-        except OSError:
-            quit_flag = True
-            continue
-
-        try:
-            buffer = sock.recv(size)
-        except OSError:
-            quit_flag = True
-            continue
-
-        handlers[packet_type](buffer)
-
 def publish_handler(buffer):
     nread = 0
     size = struct.unpack("!H", buffer[:2])[0]
@@ -124,7 +108,7 @@ def publish_handler(buffer):
     nread += 2
     value = struct.unpack(f"!{size}s", buffer[nread:])[0]
     
-    print(f"Topic: {topic} Message: {value}")
+    print(f"Topic: {topic} Message: {value}\nSMQ:> ", end="")
 
 def puback_handler(buffer):
     response = buffer[0]
