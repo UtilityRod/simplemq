@@ -7,6 +7,8 @@ import (
 const (
 	SUCCESS         = 0x01
 	INVALID_AUTH    = 0x02
+	INVALID_TOPIC   = 0x03
+	REDUNDANT_SUB   = 0x04
 	GENERAL_FAILURE = 0xFF
 )
 

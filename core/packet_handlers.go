@@ -27,10 +27,19 @@ func (server *SMQServer) subscribeHandler(inter interface{}) {
 	// Get the topic being subscribed too
 	topicStr := subscribe.Topic
 	topic := server.Topics[topicStr]
+
+	if topic == nil {
+		response := packets.NewResponse(SubackType, packets.INVALID_TOPIC)
+		smqPayload.Client.Conn.Write(response.ByteString)
+		return
+	}
+
 	// Check to see if client already subscribed to topic
 	clientName := smqPayload.Client.ClientName
 	if _, ok := topic.Clients[clientName]; ok {
 		// Client already subscribed
+		response := packets.NewResponse(SubackType, packets.REDUNDANT_SUB)
+		smqPayload.Client.Conn.Write(response.ByteString)
 		return
 	}
 
@@ -39,6 +48,8 @@ func (server *SMQServer) subscribeHandler(inter interface{}) {
 	topic.Clients[clientName] = client
 	// Update client's subscribed topics
 	client.Topics[topicStr] = topic
+	response := packets.NewResponse(SubackType, packets.SUCCESS)
+	smqPayload.Client.Conn.Write(response.ByteString)
 }
 
 func (server *SMQServer) unsubscribeHandler(inter interface{}) {

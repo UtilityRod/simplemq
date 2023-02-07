@@ -31,7 +31,6 @@ class SocketReader(threading.Thread):
                         buffer = self._sock.recv(size)
                     except OSError:
                         continue 
-            
                     self._handlers[packet_type](buffer)
                 else:
                     quit_flag = True

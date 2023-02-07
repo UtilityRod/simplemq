@@ -54,7 +54,8 @@ def main():
             print("Authentication successful")
         read_handlers = {
             2: publish_handler,
-            6: puback_handler
+            7: puback_handler,
+            8: suback_handler,
         }
         socket_reader = SocketReader(sock, read_handlers)
         socket_reader.start()
@@ -117,6 +118,18 @@ def puback_handler(buffer):
         print("Message was publishing successfully")
     else:
         print("Message was not published successfully")
+
+def suback_handler(buffer):
+    response = int(buffer[0])
+
+    if response == 0x01:
+        print("Subscribe was successful\nSMQ:> ", end="")
+    elif response == 0x03:
+        print("Invalid topic to subscribe to\nSMQ:> ", end="")
+    elif response == 0x04:
+        print("Already subscribe to topic\nSMQ:> ", end="")
+    else:
+        print("Unknown server error occurred for subscribe\nSMQ:> ", end="")
 
 def read_publish(sock, size):
     buffer = sock.recv(size)

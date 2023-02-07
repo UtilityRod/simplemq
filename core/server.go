@@ -15,6 +15,7 @@ const (
 	DisconnectType  = 5
 	ConnackType     = 6
 	PubackType      = 7
+	SubackType      = 8
 	DefaultUser     = "admin"
 	DefaultPass     = "password"
 )
